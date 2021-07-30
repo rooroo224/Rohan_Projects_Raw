@@ -1,0 +1,31 @@
+****************************************************************************************************
+2D MESH READER
+****************************************************************************************************
+
+The purpose of the code is to read a mesh in the MIXD format and write it out as VTK format for
+visualization.
+
+## Compilation
+
+To compile the code you have to:
+
+mkdir build
+cd build
+cmake ..
+make
+
+## Runnning
+
+To run the code you have to:
+
+cd test
+../build/read-mesh (./settings.blah.in)
+
+## Visualization
+
+To visualize the result you have to:
+
+module load GRAPHICS paraview
+paraview
+
+open Cylinder.pvtu

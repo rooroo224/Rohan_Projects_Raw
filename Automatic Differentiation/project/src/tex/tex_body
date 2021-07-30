@@ -1,0 +1,9 @@
+\documentclass{article}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{float} %% for floating images [H]
+\begin{document}
+
+
+\end{document}
+
