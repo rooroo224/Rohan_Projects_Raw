@@ -172,10 +172,10 @@ class Transformation:
         #####################################################################################################################
         
         # Option 1 : easy but may cause some isues since we have a overdetermined system
-        """
+        
         self.inva = -np.arccos(self.K)
         self.invc = np.arctan2(-self.I,self.J)
-        """
+        
         # Option 2 : expensive to calculate, since we mimize a,c angles the solve least squares with unconstrained optimization
         #            but results are definitely more robost. None the less the results are still not accurate 
         
@@ -193,7 +193,7 @@ class Transformation:
         """
         
         # Option 3 : Root finding to Solve for least squares with Levenberg-Marquardt, most accurate results are obtained, note that sin/cos(360+x)=sin/cos(x)
-    
+        """
         def inv_angles(x, I, J ,K):
             f = [ (I - (np.sin(x[0])*np.sin(x[1]))),
                   (J + (np.sin(x[0])*np.cos(x[1]))),
@@ -206,7 +206,8 @@ class Transformation:
             self.inva[i] = roots['x'][0]
             self.invc[i] = roots['x'][1] + np.radians(self.angle)
            #print(i, np.rad2deg(self.inva[i]),np.rad2deg(self.a[i]),np.rad2deg(self.invc[i]),np.rad2deg(self.c[i]))
-            print(i, np.rad2deg(self.inva[i]),np.rad2deg(self.invc[i]))
+           #print(i, np.rad2deg(self.inva[i]),np.rad2deg(self.invc[i]))
+        """
         ######################################################################################################################
   
         self.init_C, self.matrix_translationA, self.matrix_rotationA,self.matrix_translationC, self.matrix_rotationC,self.matrix_back_translation = self.mat(self.inva,self.invc)

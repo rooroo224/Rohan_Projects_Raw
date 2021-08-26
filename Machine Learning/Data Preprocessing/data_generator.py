@@ -24,9 +24,9 @@ from scipy.signal import find_peaks
 np.set_printoptions(threshold=np.inf)
 
 # This function can be called to generate a dataset given the blade number and blade angle
-def generator(dir_paraquet, dir_planning, dir_final_save, block, angle, tol):
+def generator(dir_paraquet, dir_planning,dir_compensation ,dir_final_save, block, angle, tol):
     
-    df_m,df_p,compensation_values_df = data_imports.data_out(block,angle,dir_paraquet,dir_planning)
+    df_m,df_p,compensation_values_df = data_imports.data_out(block,angle,dir_paraquet,dir_planning,dir_compensation)
     
     # Just copying machine data points linear(x,y,x) and rotart (a,c) into arrays.
     # These machine points (x,y,x,a,c) are transformed from machine coordinate system to workpiece coordinate system by forward tramsformation
@@ -184,14 +184,16 @@ def generator(dir_paraquet, dir_planning, dir_final_save, block, angle, tol):
     final_df = pd.concat([df_p,mean_m, pd.DataFrame({'tcp_error':tcp_avg})], axis=1)
     final_df = final_df.drop(['Level','Step'],axis=1)
     final_df = final_df.dropna()
-    
+    final_df['block'] = block
+    final_df['angle'] = angle
+    final_df = final_df.iloc[int(final_df.shape[0]*0.05):-int(final_df.shape[0]*0.05),:]
     # Inspite of the average, there are some high impuse peaks observed in the data (Run the visualiation.ipnby), these must be removed to obtain a flawless, reliable dataset
     
     def remove_peaks(final_df, compensation_values_df):
         
         # using machine data from newly created combined dataset same forward transformation is performed as discribled above
         
-        # Most of the code in this section is for testing and visualization (not printed now), makin takaway is to obtain (X,Y,Z) from (x,y,z) in other words, forward transformation
+        # Most of the code in this section is for testing and visualization (not printed now), main takaway is to obtain (X,Y,Z) from (x,y,z) in other words, forward transformation
         x_final = final_df['MachineX'].copy(deep=True)                
         y_final = final_df['MachineY'].copy(deep=True)
         z_final = final_df['MachineZ'].copy(deep=True)
@@ -283,25 +285,121 @@ def generator(dir_paraquet, dir_planning, dir_final_save, block, angle, tol):
         Y_final, final_df = remove_peaks(final_df,compensation_values_df)
         
         # Two types of spikes are typicalled observed (check visualizaion by runnung  vizualization.ipnyb) one in positive direction and othes in negetive direction, so for robostness both are considered. At the same time, it is not wise to remove the original expected trajectory of the tool path in begining and the end, so especially for the positive direction they are intentionally not removed 
-        peaks1, _ = find_peaks(-Y_final, height=(-175,None))
-        peaks2,_ = find_peaks(Y_final[0:-1000], height=(240,None))
+        #peaks1, _ = find_peaks(-Y_final, height=(-175,None))
+        peaks1, _ = find_peaks(-Y_final, height=(-(np.mean(Y_final)-7*np.std(Y_final)),None))
+       # peaks2,_ = find_peaks(Y_final[0:-1000], height=(240,None))
+       # peaks2,_ = find_peaks(Y_final, height=(240,None))
+        peaks2,_ = find_peaks(Y_final, height=((np.mean(Y_final)+7*np.std(Y_final)),None))
         peaks = list(peaks1) + list(peaks2)
 
         if(len(peaks)==0):
             break
 
         # if each peak on a plateu has to be removed its very expensive, so if two neighbous are consicutively classifies as peaks (given by count), it is assumed as plateu and 100 datapoint sare removed. This is a reasonable compromise in accuracy for significant speedup
-        elif(len(peaks)==1 and count>2):
+
+        elif(len(peaks)==1 and count>2 and peaks[-1]+100<final_df.shape[0]):
             arr = final_df.to_numpy()
             arr = np.delete(arr, np.arange(peaks[0],peaks[0]+100), 0)
             final_df = pd.DataFrame(arr,columns=col)
             count = 0
+        
+        elif(len(peaks)==1 and count>2 and (final_df.shape[0]-100<peaks[-1]<final_df.shape[0])):
+            arr = final_df.to_numpy()
+            arr = np.delete(arr, np.arange(peaks[0],peaks[0]+(final_df.shape[0]-peaks[-1])), 0)
+            final_df = pd.DataFrame(arr,columns=col)
+            count = 0
+        
 
         else:
             arr = final_df.to_numpy()
             arr = np.delete(arr,peaks, 0)
             final_df = pd.DataFrame(arr,columns=col)
             count = count+1
+            
+    def shift(final_df, compensation_values_df):
+        x_final = final_df['MachineX'].copy(deep=True)                  # using machine data from newly created combined dataset
+        y_final = final_df['MachineY'].copy(deep=True) 
+        z_final = final_df['MachineZ'].copy(deep=True) 
+        a_final = final_df['MachineA'].copy(deep=True) 
+        c_final = final_df['MachineC'].copy(deep=True) 
+
+        size1_final = x_final.shape[0]
+
+        # converting pandas series to numpy array
+        x_final = x_final.to_numpy()
+        y_final = y_final.to_numpy()
+        z_final = z_final.to_numpy()
+        a_final = a_final.to_numpy(dtype =  np.float64)
+        a_final = np.deg2rad(a_final)
+        c_final = c_final.to_numpy(dtype =  np.float64)
+        c_final = np.deg2rad(c_final)
+
+        tool_tip_X_final = final_df['Tool Tip Point X'].to_numpy()        # using newly created combined dataset
+        tool_tip_Y_final = final_df['Tool Tip Point Y'].to_numpy()
+        tool_tip_Z_final = final_df['Tool Tip Point Z'].to_numpy()
+
+        X_inv_final = tool_tip_X_final
+        Y_inv_final = tool_tip_Y_final
+        Z_inv_final = tool_tip_Z_final
+
+        #compensation_values
+        compensation_values = compensation_values_df.to_numpy()
+
+        # Within each cube we have ranges defined in x,y,z for the machine position
+
+        x_range = np.arange(-200,201,100)
+        y_range = np.arange(-300,301,150)
+        z_range = np.arange(-500,1,50)
+
+        obj3_final = compensation.Compensation(compensation_values,x_range,y_range,z_range)
+
+        # Caclculation of compensation error values based on machine positions obtained through inverse transformation
+        deltaX1_final, deltaY1_final, deltaZ1_final,deltaI1_final,deltaJ1_final,deltaK1_final = obj3_final.calculate(x_final,y_final,z_final)  
+
+        x_compensated_final = x_final + deltaX1_final*10**-3    # since given compensation is to be converted from microns to mm (10**-6 x 10**3 = 10**-3)
+        y_compensated_final = y_final + deltaY1_final*10**-3
+        z_compensated_final = z_final + deltaZ1_final*10**-3
+
+        obj_final = transformation.Transformation(size1_final,angle)
+        # Forward Transformation fuction:
+        # Input : Machine points in machine coordinate system
+        # Output: returns too tip points and orientation in workpiece coordinate system
+        tool_position_workpiece_CS_final, tool_orientation_workpiece_CS_final = obj_final.forward(x_compensated_final,y_compensated_final,z_compensated_final,a_final,c_final)
+
+        X_final = tool_position_workpiece_CS_final[0,0,:]
+        Y_final = tool_position_workpiece_CS_final[1,0,:]
+        Z_final = tool_position_workpiece_CS_final[2,0,:]
+
+        I_final = tool_orientation_workpiece_CS_final[0,0,:]
+        J_final = tool_orientation_workpiece_CS_final[1,0,:]
+        K_final = tool_orientation_workpiece_CS_final[2,0,:]
+
+        #Shifting the data 
+        div = 20
+        length = Y_final.shape[0]
+        chunck_len = int(length/div)
+
+        for i in np.arange(0,div):
+            if(i != div-1):
+                diff = Y_final[i*chunck_len:(i+1)*chunck_len] - Y_inv_final[i*chunck_len:(i+1)*chunck_len]
+                Y_final[i*chunck_len:(i+1)*chunck_len] = Y_final[i*chunck_len:(i+1)*chunck_len] - np.mean(diff)
+
+            else:
+                diff = Y_final[i*chunck_len:length] - Y_inv_final[i*chunck_len:length]
+                Y_final[i*chunck_len:length] = Y_final[i*chunck_len:length] - np.mean(diff)
+
+
+        return X_final,Y_final,Z_final
+      
+    X_mc, Y_mc, Z_mc = shift(final_df,compensation_values_df)
+    
+    final_df['Tool Tip Point Machine X'] = X_mc
+    final_df['Tool Tip Point Machine Y'] = Y_mc
+    final_df['Tool Tip Point Machine Z'] = Z_mc
+    
+    tool_point_deviation = np.sqrt(((final_df['Tool Tip Point Machine X'] - final_df['Tool Tip Point X'])**2 + (final_df['Tool Tip Point Machine Y'] - final_df['Tool Tip Point Y'])**2 + (final_df['Tool Tip Point Machine Z'] - final_df['Tool Tip Point Z'])**2).to_numpy(dtype=np.float64))
+    
+    final_df['Tool Point Deviation'] = tool_point_deviation
             
     # saving data 
     final_df.to_excel(str(dir_final_save)+'finaldf_forward_with_compensation'+str(block)+'__'+str(angle)+'.xlsx',index=False) 

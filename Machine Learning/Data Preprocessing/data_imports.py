@@ -10,16 +10,17 @@
 import numpy as np
 import pandas as pd
 
-def data_out(block,angle,path_parquet,path_planning):
+def data_out(block,angle,path_parquet,path_planning,path_compensation):
     
-    machine_data_file = str(path_parquet)+'ProgNumber-'+str(block)+'--Blade--'+str(angle)+'_DownsampledData.parquet'
+    machine_data_file = str(path_parquet)+'ProgNumber-'+str(block)+'--Blade--'+str(angle)+'_DownsampledData'+'.parquet'
     df_m = pd.read_parquet(machine_data_file)
 
 
     planning_file = str(path_planning)+'Planning_Data_OP'+str(block)+'.xlsx'
     df_p = pd.read_excel(planning_file)
     
-    compensation_values_df = pd.read_csv('Compensation_Makino.csv')
+    compensation_file = str(path_compensation)+'Compensation_Makino'+'.csv'
+    compensation_values_df = pd.read_csv(compensation_file)
     
     #print('Files loaded Succussfully!')
     
